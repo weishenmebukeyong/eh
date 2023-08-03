@@ -1,0 +1,167 @@
+%参数设置
+%load ('B_sum.mat')
+%quantity_e = B_sum
+%quantity_h = B_sum
+quantity_e = 1000 + randn(24,20)*100;
+quantity_h = 600 + randn(24,20)*100;
+c_ele_u=2000;  %电解槽单位购买成本
+c_com_u=1;  %压缩机单位购买成本
+c_hst_u=4000;  %储氢罐单位购买成本
+c_fc_u=1;   %燃料电池单位购买成本
+c_hcm_u=1;  %充氢机单位购买成本
+c_cp_u=1;   %充电桩单位购买成本
+c_wind_u=1; %风力发电设备单位购买成本
+c_pv_u=1;   %光伏发电设备单位购买成本
+c_ba_u=1;   %电池单位购买成本
+c_co2=1%二氧化碳排放成本
+c_ele_i=1;%电解槽安装成本
+c_com_i=1;%压缩机安装成本
+c_hst_i=1;%储氢罐安装成本
+c_fc_i=1;%燃料电池安装成本
+c_hcm_i=1;%充氢机安装成本
+c_cp_i=1;%充电桩安装成本
+c_wind_i=1;%风电安装成本
+c_pv_i=1;%光伏安装成本
+c_ba_i=1;%电池安装成本
+
+c_w_u=5000;%单位员工成本 元/月
+a = 5;%员工数量
+l=[297.9 296 313 260.5 260.7 241.1 221.3 161.7 144.2 107.4 124 53.1 44.3 75.3 138.6 177.6 176.5 233.4 363 364 ] ;%运输距离
+pri_th = 1;%运输价格
+
+pri_be=ones(24,20);%购电价格
+pri_bh=ones(24,20);%购氢价格
+
+yita_eh=0.7;%电解槽效率系数 
+beta_eh=1;%电-氢转换效率系数 单位转换
+yita_he=0.4;%燃料电池效率系数
+beta_he=1;%氢—电转换系数 单位转换
+yita_com=1;%压缩机氢气消耗率
+beta_com=1;%压缩机参考功率下的功率消耗率
+yita_ba=1;%充放电率
+yita_hst=1;%充放氢率
+
+yita_ce=1;%充电效率
+yita_ch=1;%充氢效率
+
+
+
+%决策变量
+x_i=binvar(1,1);%选址01变量
+cap_ele=sdpvar(1,20,'full' );%电解槽容量
+cap_com=sdpvar(1,20,'full' );%压缩机容量
+cap_hst=sdpvar(1,20,'full' );%储氢罐容量
+cap_fc=sdpvar(1,20,'full' );%燃料电池容量
+cap_wind=sdpvar(1,20,'full' );%风力装机容量
+cap_pv=sdpvar(1,20,'full' );%光伏装机容量
+cap_ba=sdpvar(1,20,'full' );%电池容量
+cap_hcm=sdpvar(1,20,'full' );%充氢机装机容量
+cap_cp=sdpvar(1,20,'full' );%充电桩装机容量
+p_ele=sdpvar(24,20,'full' );%电解槽功率
+p_com=sdpvar(24,20,'full' );%压缩机功率
+p_hst_c=sdpvar(24,20,'full' );%储氢罐充氢功率
+p_hst_d=sdpvar(24,20,'full' );%储氢罐放氢功率
+p_fc=sdpvar(24,20,'full' );%燃料电池功率
+p_wind=sdpvar(24,20,'full' );%风力发电功率
+p_pv=sdpvar(24,20,'full' );%光伏发电功率
+p_ba_c=sdpvar(24,20,'full' );%电池充电功率
+p_ba_d=sdpvar(24,20,'full' );%电池放电功率
+p_hcm=sdpvar(24,20,'full' );%充氢机充氢功率
+p_cp=sdpvar(24,20,'full' );%充电桩充电功率
+soc_e=sdpvar(24,20,'full');%电池荷电状态
+soc_h=sdpvar(24,20,'full');%储氢罐储氢状态
+q_be=sdpvar(24,20,'full');%购电量
+q_bh=sdpvar(24,20,'full');%购氢量
+
+
+
+%约束条件
+%装机容量限制
+C = [cap_ele >= 0];
+C = [C, cap_com >= 0];
+C = [C, cap_hst >= 0];
+C = [C, cap_fc >= 0];
+C = [C, cap_wind >= 0];
+C = [C, cap_pv >= 0];
+C = [C, cap_ba >= 0];
+C = [C, cap_hcm >= 0];
+C = [C, cap_cp >= 0];
+C = [C, soc_e(:,1) >= 0] % 电化学储能SOC下限约束
+C = [C, soc_h(:,1) >= 0] % 储氢罐SOC下限约束
+
+%功率容量约束
+for i= 1:20
+    C = [C,0.2*cap_ele(1,i) <= p_ele(:,i)];
+    C = [C,p_ele(:,i) <= cap_ele(1,i)];%电解槽功率约束
+    C = [C,p_com(:,i)>= 0];
+    C = [C,p_com(:,i) <= cap_com(1,i)];%压缩机功率约束
+    C = [C,p_hst_c(:,i) >= 0];
+    C = [C,p_hst_c(:,i) <= cap_hst(1,i)];%储氢罐功率约束
+    C = [C, soc_h(1,i) == 0.01 + p_com(1,i)*yita_hst - p_hst_d(1,i)*yita_hst]; %储氢罐soc约束
+    C = [C, soc_h(2:24,i) == soc_e(1:23,i)+p_com(2:24,i)*yita_ba - p_hst_d(2:24,i)*yita_hst];
+    C = [C,p_fc >= 0];
+    C = [C,p_fc(:,i) <= cap_fc(1,i)];%燃料电池功率约束
+    C = [C,p_wind >= 0];
+    C = [C,p_wind(:,i) <= cap_wind(1,i)];%风电功率约束
+    C = [C,p_pv >= 0];
+    C = [C,p_pv(:,i) <= cap_pv(1,i)];%光伏功率约束
+    C = [C,p_ba_c >= 0];
+    C = [C,p_ba_c(:,i) <= cap_ba(1,i)];%电池充电功率约束
+    C = [C,p_ba_d >= 0];
+    C = [C,p_ba_d(:,i) <= cap_ba(1,i)];%电池放电功率约束
+    C = [C, soc_e(1,i) == 0.01 + p_ba_c(1,i)*yita_ba - p_ba_d(1,i)*yita_ba]; %电化学储能soc约束 
+    C = [C, soc_e(2:24,i) == soc_e(1:23,i)+p_ba_c(2:24,i)*yita_ba - p_ba_d(2:24,i)*yita_ba];
+    C = [C,p_hcm >= 0];
+    C = [C,p_hcm(:,i) <= cap_hcm(1,i)];%充氢机功率约束
+    C = [C,p_cp >= 0];
+    C = [C,p_cp(:,i) <= cap_cp(1,i)];%充电桩功率约束
+end
+
+
+qe_ele =p_ele * yita_eh * beta_eh;%电解槽制氢量  
+qh_fc =p_fc * yita_he * beta_he;%燃料电池发电量
+for i = 1:20
+    C = [C, p_hst_c(:,i) <= p_com(:,i) * yita_hst];% 储氢罐和压缩机之间的耦合约束
+end
+for i = 1:20
+    C = [C, qh_fc(:,i) <= qe_ele(:,i)];
+end  % 电解槽和燃料电池之间的耦合约束
+
+
+%购电量=充电符合-风光发电-燃料电池
+%购氢量=氢负荷-制氢量
+for i=1:20
+    C = [C, q_be(:,i) == quantity_e(:,i) - p_wind(:,i) - p_pv(:,i) - p_fc(:,i)];
+    C = [C, q_bh(:,i) == quantity_h(:,i) - p_ele(:,i)];
+end
+
+
+
+
+
+
+%目标函数
+%成本计算
+%建设成本
+c_ele = c_ele_u * cap_ele + c_ele_i; %电解槽设备、安装成本
+c_com = c_com_u * cap_com + c_com_i; %压缩机设备、安装成本
+c_hst = c_hst_u * cap_hst + c_hst_i; %储氢罐设备、安装成本
+c_fc = c_fc_u * cap_fc + c_fc_i; %燃料电池设备、安装成本
+c_hcm = c_hcm_u * cap_hcm + c_hcm_i; %充氢机备、安装成本
+c_cp = c_cp_u * cap_cp + c_cp_i; %充电桩设备、安装成本
+c_wind = c_wind_u * cap_wind + c_wind_i; %风电设备、安装成本 
+c_pv = c_pv_u * cap_pv + c_pv_i; %光伏设备、安装成本
+c_ba = c_ba_u * cap_ba + c_ba_i; %电池设备、安装成本
+
+%运营成本
+c_w = a * c_w_u % 员工成本
+c_c = sum(q_be.*c_co2)  % 碳排放成本
+c_be = sum(pri_be .* q_be)+c_c ;     %购电成本
+
+c_bh = sum(pri_bh .* q_bh) + pri_th * l;  %购氢成本
+
+c_all = sum(c_ele + c_com + c_hst + c_fc + c_hcm + c_cp + c_wind + c_pv + c_ba +c_bh+ c_be + c_w)*x_i;
+
+
+ops = sdpsettings('solver' ,'cplex','verbose',1); %采用cplex求解器
+result = optimize(C,c_all,ops);
